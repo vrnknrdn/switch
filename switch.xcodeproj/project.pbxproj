@@ -48,9 +48,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		559FDD672F2E912C00CB3FB6 /* dark-theme */ = {
+		559FDD672F2E912C00CB3FB6 /* Switch */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 559FDD732F2E912D00CB3FB6 /* Build configuration list for PBXNativeTarget "dark-theme" */;
+			buildConfigurationList = 559FDD732F2E912D00CB3FB6 /* Build configuration list for PBXNativeTarget "Switch" */;
 			buildPhases = (
 				559FDD642F2E912C00CB3FB6 /* Sources */,
 				559FDD652F2E912C00CB3FB6 /* Frameworks */,
@@ -63,10 +63,10 @@
 			fileSystemSynchronizedGroups = (
 				559FDD6A2F2E912C00CB3FB6 /* switch */,
 			);
-			name = "dark-theme";
+			name = Switch;
 			packageProductDependencies = (
 			);
-			productName = "dark-theme";
+			productName = Switch;
 			productReference = 559FDD682F2E912C00CB3FB6 /* Switch.app */;
 			productType = "com.apple.product-type.application";
 		};
@@ -99,7 +99,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				559FDD672F2E912C00CB3FB6 /* dark-theme */,
+				559FDD672F2E912C00CB3FB6 /* Switch */,
 			);
 		};
 /* End PBXProject section */
@@ -331,7 +331,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		559FDD732F2E912D00CB3FB6 /* Build configuration list for PBXNativeTarget "dark-theme" */ = {
+		559FDD732F2E912D00CB3FB6 /* Build configuration list for PBXNativeTarget "Switch" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				559FDD742F2E912D00CB3FB6 /* Debug */,

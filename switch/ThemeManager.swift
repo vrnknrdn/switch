@@ -7,6 +7,7 @@
 
 import Foundation
 import Cocoa
+import Combine
 
 // MARK: - Constants
 
