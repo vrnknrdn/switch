@@ -132,7 +132,7 @@ struct MainSettingsView: View {
             
             Spacer()
             
-            Text("v1.0")
+            Text("v0.0.1")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
         }
