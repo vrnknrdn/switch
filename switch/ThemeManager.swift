@@ -33,6 +33,13 @@ final class ThemeManager: ObservableObject {
     @Published var scheduleEnabled: Bool {
         didSet {
             UserDefaults.standard.set(scheduleEnabled, forKey: UserDefaultsKeys.scheduleEnabled)
+            if scheduleEnabled {
+                lastAppliedTransitionDate = nil
+                reschedule()
+            } else {
+                transitionTimer?.invalidate()
+                transitionTimer = nil
+            }
         }
     }
     
@@ -66,7 +73,9 @@ final class ThemeManager: ObservableObject {
         }
     }
     
-    private var timer: Timer?
+    private var transitionTimer: Timer?
+    private var lastAppliedTransitionDate: Date?
+    private var wakeObserver: Any?
     
     private init() {
         // Load saved settings or use defaults
@@ -158,55 +167,95 @@ final class ThemeManager: ObservableObject {
     func startScheduler() {
         // Request permissions on first launch
         requestPermissions()
-        
-        // Check schedule after a short delay (to allow permission dialog)
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(1))
-            self?.checkAndApplySchedule()
-        }
-        
-        // Then check every minute
-        let newTimer = Timer(timeInterval: 60, repeats: true) { [weak self] _ in
+
+        // Subscribe to wake-from-sleep notifications
+        wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
             guard let self else { return }
             Task { @MainActor [weak self] in
-                self?.checkAndApplySchedule()
+                self?.reschedule()
             }
         }
-        RunLoop.main.add(newTimer, forMode: .common)
-        timer = newTimer
+
+        // Reschedule after a short delay (to allow permission dialog)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(1))
+            self?.reschedule()
+        }
     }
     
     func stopScheduler() {
-        timer?.invalidate()
-        timer = nil
+        transitionTimer?.invalidate()
+        transitionTimer = nil
+        if let wakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+            self.wakeObserver = nil
+        }
     }
     
-    private func checkAndApplySchedule() {
-        guard scheduleEnabled else { return }
-        
+    private func transitionTimes(for date: Date) -> [(date: Date, isDark: Bool)] {
         let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        let lightTime = calendar.date(byAdding: DateComponents(hour: lightModeHour, minute: lightModeMinute), to: startOfDay)!
+        let darkTime = calendar.date(byAdding: DateComponents(hour: darkModeHour, minute: darkModeMinute), to: startOfDay)!
+        return [(lightTime, false), (darkTime, true)]
+    }
+
+    private func mostRecentTransition(before date: Date) -> (date: Date, isDark: Bool)? {
+        let calendar = Calendar.current
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: date)!
+        let candidates = transitionTimes(for: date) + transitionTimes(for: yesterday)
+        return candidates
+            .filter { $0.date <= date }
+            .max(by: { $0.date < $1.date })
+    }
+
+    private func nextTransition(after date: Date) -> (date: Date, isDark: Bool)? {
+        let calendar = Calendar.current
+        let tomorrow = calendar.date(byAdding: .day, value: 1, to: date)!
+        let candidates = transitionTimes(for: date) + transitionTimes(for: tomorrow)
+        return candidates
+            .filter { $0.date > date }
+            .min(by: { $0.date < $1.date })
+    }
+
+    private func reschedule() {
+        transitionTimer?.invalidate()
+        transitionTimer = nil
+
+        guard scheduleEnabled else { return }
+
         let now = Date()
-        let currentHour = calendar.component(.hour, from: now)
-        let currentMinute = calendar.component(.minute, from: now)
-        let currentTimeInMinutes = currentHour * 60 + currentMinute
-        
-        let lightTimeInMinutes = lightModeHour * 60 + lightModeMinute
-        let darkTimeInMinutes = darkModeHour * 60 + darkModeMinute
-        
-        let shouldBeDark: Bool
-        
-        if lightTimeInMinutes < darkTimeInMinutes {
-            // Normal case: light time is before dark time (e.g., 7:00 - 19:00)
-            shouldBeDark = currentTimeInMinutes < lightTimeInMinutes || currentTimeInMinutes >= darkTimeInMinutes
-        } else {
-            // Inverted case: dark time is before light time (e.g., 22:00 - 6:00)
-            shouldBeDark = currentTimeInMinutes >= darkTimeInMinutes && currentTimeInMinutes < lightTimeInMinutes
+
+        // Apply missed transition if needed
+        if let recent = mostRecentTransition(before: now) {
+            if lastAppliedTransitionDate == nil || recent.date > lastAppliedTransitionDate! {
+                if recent.isDark != isDarkMode() {
+                    setDarkMode(recent.isDark)
+                }
+                lastAppliedTransitionDate = recent.date
+            }
         }
-        
-        let currentlyDark = isDarkMode()
-        
-        if shouldBeDark != currentlyDark {
-            setDarkMode(shouldBeDark)
+
+        // Schedule one-shot timer for the next transition
+        if let next = nextTransition(after: now) {
+            let interval = max(next.date.timeIntervalSince(now), 0.1)
+            let newTimer = Timer(timeInterval: interval, repeats: false) { [weak self] _ in
+                guard let self else { return }
+                Task { @MainActor [weak self] in
+                    guard let self, self.scheduleEnabled else { return }
+                    if next.isDark != self.isDarkMode() {
+                        self.setDarkMode(next.isDark)
+                    }
+                    self.lastAppliedTransitionDate = next.date
+                    self.reschedule()
+                }
+            }
+            RunLoop.main.add(newTimer, forMode: .common)
+            transitionTimer = newTimer
         }
     }
     
@@ -221,8 +270,13 @@ final class ThemeManager: ObservableObject {
     
     func setLightModeDate(_ date: Date) {
         let calendar = Calendar.current
-        lightModeHour = calendar.component(.hour, from: date)
-        lightModeMinute = calendar.component(.minute, from: date)
+        let newHour = calendar.component(.hour, from: date)
+        let newMinute = calendar.component(.minute, from: date)
+        guard newHour != lightModeHour || newMinute != lightModeMinute else { return }
+        lightModeHour = newHour
+        lightModeMinute = newMinute
+        lastAppliedTransitionDate = nil
+        reschedule()
     }
     
     func getDarkModeDate() -> Date {
@@ -234,7 +288,12 @@ final class ThemeManager: ObservableObject {
     
     func setDarkModeDate(_ date: Date) {
         let calendar = Calendar.current
-        darkModeHour = calendar.component(.hour, from: date)
-        darkModeMinute = calendar.component(.minute, from: date)
+        let newHour = calendar.component(.hour, from: date)
+        let newMinute = calendar.component(.minute, from: date)
+        guard newHour != darkModeHour || newMinute != darkModeMinute else { return }
+        darkModeHour = newHour
+        darkModeMinute = newMinute
+        lastAppliedTransitionDate = nil
+        reschedule()
     }
 }

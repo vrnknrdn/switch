@@ -12,7 +12,7 @@ Click to toggle. Right-click for settings.
 
 ## Install
 
-1. Build in Xcode or download
+1. Download the latest release from [Releases](https://github.com/vrnknrdn/switch/releases)
 2. Move `Switch.app` to `/Applications`
 3. Launch and allow System Events access
 
